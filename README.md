@@ -1,1 +1,2 @@
-# Zaqathon-Miihr
+# Zaqathon
+Hackathon by Zaqa

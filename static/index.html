@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Order Intake System</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        .confidence-high { color: #059669; }
+        .confidence-medium { color: #D97706; }
+        .confidence-low { color: #DC2626; }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold mb-8">Smart Order Intake System</h1>
+        
+        <!-- Email Upload Section -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4">Upload Email</h2>
+            <div class="flex items-center space-x-4">
+                <input type="file" id="emailFile" class="border p-2 rounded" accept=".txt,.eml">
+                <button onclick="uploadEmail()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                    Process Email
+                </button>
+            </div>
+        </div>
+
+        <!-- Order Review Section -->
+        <div id="orderReview" class="bg-white rounded-lg shadow-md p-6 mb-8 hidden">
+            <h2 class="text-xl font-semibold mb-4">Order Review</h2>
+            <div class="mb-4">
+                <p class="font-medium">Order ID: <span id="orderId"></span></p>
+                <p class="font-medium">Customer Email: <span id="customerEmail"></span></p>
+                <p class="font-medium">Total Confidence Score: <span id="confidenceScore"></span></p>
+            </div>
+
+            <!-- Delivery Details -->
+            <div id="deliveryDetails" class="mb-4">
+                <p class="font-medium">Delivery Address: <span id="deliveryAddress"></span></p>
+                <p class="font-medium">Delivery Date: <span id="deliveryDate"></span></p>
+            </div>
+
+            <!-- Order Items Table -->
+            <div class="overflow-x-auto">
+                <table class="min-w-full table-auto">
+                    <thead>
+                        <tr class="bg-gray-100">
+                            <th class="px-4 py-2">SKU</th>
+                            <th class="px-4 py-2">Quantity</th>
+                            <th class="px-4 py-2">Confidence</th>
+                            <th class="px-4 py-2">Status</th>
+                            <th class="px-4 py-2">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="orderItems">
+                        <!-- Items will be populated here -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Validation Issues -->
+            <div id="validationIssues" class="mt-4 p-4 bg-red-50 rounded hidden">
+                <h3 class="font-semibold text-red-700 mb-2">Validation Issues</h3>
+                <ul id="issuesList" class="list-disc list-inside text-red-600">
+                    <!-- Issues will be populated here -->
+                </ul>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="mt-6 flex space-x-4">
+                <button onclick="approveOrder()" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+                    Approve Order
+                </button>
+                <button onclick="exportPDF()" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
+                    Export PDF
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function uploadEmail() {
+            const fileInput = document.getElementById('emailFile');
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('Please select a file first');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/api/upload-email', {
+                    method: 'POST',
+                    body: formData
+                });
+                const order = await response.json();
+                displayOrder(order);
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error processing email');
+            }
+        }
+
+        function displayOrder(order) {
+            document.getElementById('orderReview').classList.remove('hidden');
+            document.getElementById('orderId').textContent = order.order_id;
+            document.getElementById('customerEmail').textContent = order.customer_email;
+            document.getElementById('confidenceScore').textContent = 
+                `${(order.total_confidence_score * 100).toFixed(1)}%`;
+
+            // Show delivery details
+            document.getElementById('deliveryAddress').textContent =
+                (order.delivery_details && order.delivery_details.address) ? order.delivery_details.address : 'Not found';
+            document.getElementById('deliveryDate').textContent =
+                (order.delivery_details && order.delivery_details.date) ? order.delivery_details.date : 'Not found';
+
+            const itemsContainer = document.getElementById('orderItems');
+            itemsContainer.innerHTML = '';
+
+            order.items.forEach(item => {
+                const row = document.createElement('tr');
+                row.className = 'border-b';
+                
+                const confidenceClass = item.confidence_score > 0.7 ? 'confidence-high' :
+                                      item.confidence_score > 0.4 ? 'confidence-medium' :
+                                      'confidence-low';
+
+                row.innerHTML = `
+                    <td class="px-4 py-2">${item.sku}</td>
+                    <td class="px-4 py-2">${item.quantity}</td>
+                    <td class="px-4 py-2 ${confidenceClass}">
+                        ${(item.confidence_score * 100).toFixed(1)}%
+                    </td>
+                    <td class="px-4 py-2">
+                        ${item.validation_issues ? '❌' : '✅'}
+                    </td>
+                    <td class="px-4 py-2">
+                        <button onclick="editItem('${item.sku}')" 
+                                class="text-blue-500 hover:text-blue-700">
+                            Edit
+                        </button>
+                    </td>
+                `;
+                itemsContainer.appendChild(row);
+            });
+
+            // Display validation issues if any
+            const issuesContainer = document.getElementById('validationIssues');
+            const issuesList = document.getElementById('issuesList');
+            
+            if (order.validation_issues && order.validation_issues.length > 0) {
+                issuesContainer.classList.remove('hidden');
+                issuesList.innerHTML = order.validation_issues
+                    .map(issue => `<li>${issue}</li>`)
+                    .join('');
+            } else {
+                issuesContainer.classList.add('hidden');
+            }
+        }
+
+        async function approveOrder() {
+            try {
+                const response = await fetch('/api/approve-order', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(currentOrder)
+                });
+                const result = await response.json();
+                alert('Order approved successfully!');
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error approving order');
+            }
+        }
+
+        async function exportPDF() {
+            try {
+                const response = await fetch(`/api/export-pdf/${currentOrder.order_id}`);
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `order-${currentOrder.order_id}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error exporting PDF');
+            }
+        }
+
+        function editItem(sku) {
+            // Implement item editing functionality
+            alert(`Edit functionality for SKU ${sku} will be implemented here`);
+        }
+    </script>
+</body>
+</html> 
